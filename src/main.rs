@@ -27,8 +27,12 @@ async fn run() {
     let parameters = std::sync::Arc::new(parameters::Parameters::new());
 
     let settings_db = std::sync::Arc::new(tokio::sync::Mutex::new(
-        settings_db::SettingsDb::new(parameters.settings_database_path.as_path())
-            .expect("Cannot open settings database"),
+        settings_db::SettingsDb::new(
+            parameters.settings_database_path.as_path(),
+            parameters.max_database_connections_count,
+        )
+        .await
+        .expect("Cannot open settings database"),
     ));
 
     let pool_factory =
@@ -76,12 +80,16 @@ async fn run() {
                                                 .lock()
                                                 .await
                                                 .get_setting("image_file_id")
+                                                .await
                                             {
                                                 Ok(value) => {
                                                     log::info!("{}", value);
 
+                                                    value
+
                                                     if let Err(e) = message
                                                         .answer_photo(InputFile::FileId(value))
+                                                        .reply_to_message_id(message.update.id)
                                                         .send()
                                                         .await
                                                     {
@@ -112,18 +120,7 @@ async fn run() {
                             }
                             Err(e) => log::warn!("Cannot create a db client: {}", e),
                         }
-
-                        // 1) Check in a database. If exists - send a slowpoke and update timestamp
-                        // 2) If doesn't exist - push to a database [primary_id; current_timestamp; forwarded_message_id]
                     }
-
-                    // For now we check whole message for being an URL.
-                    // We are not trying to find sub-URLs in a message, since it can lead to too high
-                    // false positives rate
-                    /*if detection::is_url(message_text) {
-                        // TODO: Check in a corresponding database and send slowpoke message, if such
-                        // link was earlier :)
-                    }*/
                 }
             })
         });

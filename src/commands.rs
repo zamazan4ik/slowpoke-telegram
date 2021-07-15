@@ -11,6 +11,8 @@ pub enum Command {
     Help,
     #[command(description = "set reply image")]
     SetImage,
+    #[command(description = "set reply animation")]
+    SetAnimation,
 }
 
 pub async fn command_answer(
@@ -51,12 +53,13 @@ pub async fn command_answer(
                         let image_set_result = settings_db
                             .lock()
                             .await
-                            .add_setting("image_file_id", first_photo.file_id.as_str());
+                            .add_setting("image_file_id", first_photo.file_id.as_str())
+                            .await;
 
                         match image_set_result {
                             Ok(_) => log::info!("Image was updated successfully"),
                             Err(e) => log::info!("Image was not updated successfully: {:?}", e),
-                        }
+                        };
                     } else {
                         static MISSED_PHOTO_IN_MESSAGE: &str =
                             "Не могу обнаружить фото в цитируемом сообщении.";
@@ -64,6 +67,33 @@ pub async fn command_answer(
                     }
                 } else {
                     static MISSED_REPLY_MESSAGE: &str = "Чтобы установить изображение, Вам необходимо ответить на сообщение с требуемым изображнием";
+                    cx.reply_to(MISSED_REPLY_MESSAGE).send().await?;
+                }
+            } else {
+                cx.reply_to(PERMISSION_DENIED).send().await?;
+            }
+        }
+        Command::SetAnimation => {
+            if utils::is_sender_an_owner(&cx.update.from(), owner_id) {
+                if let Some(reply_message) = cx.update.reply_to_message() {
+                    if let Some(animation) = reply_message.animation() {
+                        let image_set_result = settings_db
+                            .lock()
+                            .await
+                            .add_setting("image_file_id", animation.file_id.as_str())
+                            .await;
+
+                        match image_set_result {
+                            Ok(_) => log::info!("Animation was updated successfully"),
+                            Err(e) => log::info!("Animation was not updated successfully: {:?}", e),
+                        }
+                    } else {
+                        static MISSED_ANIMATION_IN_MESSAGE: &str =
+                            "Не могу обнаружить анимацию в цитируемом сообщении.";
+                        cx.reply_to(MISSED_ANIMATION_IN_MESSAGE).send().await?;
+                    }
+                } else {
+                    static MISSED_REPLY_MESSAGE: &str = "Чтобы установить анимацию, Вам необходимо ответить на сообщение с требуемой анимацией";
                     cx.reply_to(MISSED_REPLY_MESSAGE).send().await?;
                 }
             } else {

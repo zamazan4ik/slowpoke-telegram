@@ -1,5 +1,3 @@
-use sqlx::Error;
-
 pub struct SqliteDatabasePoolFactory {
     db_root_path: std::path::PathBuf,
     max_connections_per_db: u32,
@@ -11,12 +9,18 @@ pub struct ChatDatabase {
     database_pool: sqlx::SqlitePool,
 }
 
+#[derive(sqlx::FromRow)]
+pub struct UserId(std::string::String);
+
 impl ChatDatabase {
     pub fn new(database_pool: sqlx::SqlitePool) -> Self {
         Self { database_pool }
     }
 
-    pub async fn check_forward_message(&self, forward_message_id: &i32) -> Result<bool, Error> {
+    pub async fn check_forward_message(
+        &self,
+        forward_message_id: &i32,
+    ) -> anyhow::Result<bool, sqlx::Error> {
         let result = sqlx::query(
             "SELECT message_id FROM forwarded_message WHERE message_id = ? AND timestamp >= date('now', '-1 day')",
         )
@@ -29,11 +33,54 @@ impl ChatDatabase {
     pub async fn add_forwarded_message(
         &self,
         forward_message_id: &i32,
-    ) -> Result<sqlx::sqlite::SqliteDone, Error> {
+    ) -> anyhow::Result<sqlx::sqlite::SqliteDone, sqlx::Error> {
         sqlx::query("INSERT INTO forwarded_message (message_id) VALUES(?)")
             .bind(forward_message_id)
             .execute(&self.database_pool)
             .await
+    }
+
+    pub async fn check_link_message(&self, link: &str) -> anyhow::Result<bool, sqlx::Error> {
+        let result = sqlx::query(
+            "SELECT message_id FROM forwarded_message WHERE link = ? AND timestamp >= date('now', '-1 day')",
+        )
+            .bind(link)
+            .fetch_optional(&self.database_pool).await?;
+
+        Ok(result.is_some())
+    }
+
+    pub async fn add_link_message(
+        &self,
+        link: &str,
+    ) -> Result<sqlx::sqlite::SqliteDone, sqlx::Error> {
+        sqlx::query("INSERT INTO link (link) VALUES(?)")
+            .bind(link)
+            .execute(&self.database_pool)
+            .await
+    }
+
+    pub async fn add_slowpoke_info(
+        &self,
+        user_id: i64,
+    ) -> anyhow::Result<sqlx::sqlite::SqliteDone, sqlx::Error> {
+        sqlx::query("INSERT INTO statistic (user_id) VALUES(?)")
+            .bind(user_id)
+            .execute(&self.database_pool)
+            .await
+    }
+
+    pub async fn get_slowpoke_info(
+        &self,
+        period: chrono::Duration,
+    ) -> futures::stream::BoxStream<Result<UserId, sqlx::Error>> {
+        let stream = sqlx::query_as::<_, UserId>(
+            "SELECT user_id FROM statistic WHERE timestamp >= date('now', '-? day')",
+        )
+        .bind(period.num_days())
+        .fetch(&self.database_pool);
+
+        stream
     }
 }
 
@@ -47,13 +94,29 @@ impl SqliteDatabasePoolFactory {
         }
     }
 
-    pub async fn init_new_db(
+    async fn init_new_db(
         &self,
         db: sqlx::SqlitePool,
-    ) -> Result<sqlx::sqlite::SqliteDone, Error> {
+    ) -> anyhow::Result<sqlx::sqlite::SqliteDone, sqlx::Error> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS forwarded_message (
                 message_id INTEGER PRIMARY KEY NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+        )
+        .execute(&db)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS link (
+                link TEXT PRIMARY KEY NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+        )
+        .execute(&db)
+        .await?;
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS statistic (
+                user_id INTEGER PRIMARY KEY NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
         )
         .execute(&db)
@@ -64,7 +127,12 @@ impl SqliteDatabasePoolFactory {
         if let Some(client) = self.client_pool.get(&chat_id) {
             Ok(client.clone())
         } else {
-            let new_db_path = self.db_root_path.join(format!("{}.db", chat_id));
+            // Database path: ROOT/chats/chat_id/storage.db
+
+            let new_db_path = self.db_root_path.join(format!("{}", chat_id));
+            std::fs::create_dir_all(&new_db_path)?;
+
+            let new_db_path = new_db_path.join("storage.db");
 
             let connection_string = format!(
                 "{}",
@@ -72,8 +140,6 @@ impl SqliteDatabasePoolFactory {
                     .to_str()
                     .ok_or(anyhow!("Cannot convert a database path to a string"))?
             );
-
-            log::info!("{}", connection_string);
 
             let connection_options = sqlx::sqlite::SqliteConnectOptions::default()
                 .create_if_missing(true)
