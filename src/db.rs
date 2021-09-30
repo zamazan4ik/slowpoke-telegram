@@ -1,3 +1,4 @@
+use sqlx::sqlite::SqliteQueryResult;
 use sqlx::Error;
 
 pub struct SqliteDatabasePoolFactory {
@@ -29,7 +30,7 @@ impl ChatDatabase {
     pub async fn add_forwarded_message(
         &self,
         forward_message_id: &i32,
-    ) -> Result<sqlx::sqlite::SqliteDone, Error> {
+    ) -> Result<SqliteQueryResult, Error> {
         sqlx::query("INSERT INTO forwarded_message (message_id) VALUES(?)")
             .bind(forward_message_id)
             .execute(&self.database_pool)
@@ -47,10 +48,7 @@ impl SqliteDatabasePoolFactory {
         }
     }
 
-    pub async fn init_new_db(
-        &self,
-        db: sqlx::SqlitePool,
-    ) -> Result<sqlx::sqlite::SqliteDone, Error> {
+    pub async fn init_new_db(&self, db: sqlx::SqlitePool) -> Result<SqliteQueryResult, Error> {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS forwarded_message (
                 message_id INTEGER PRIMARY KEY NOT NULL,

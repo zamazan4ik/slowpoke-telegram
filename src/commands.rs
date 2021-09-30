@@ -14,9 +14,9 @@ pub enum Command {
 }
 
 pub async fn command_answer(
-    cx: &UpdateWithCx<Message>,
+    cx: &UpdateWithCx<Bot, Message>,
     command: Command,
-    owner_id: i32,
+    owner_id: i64,
     settings_db: std::sync::Arc<tokio::sync::Mutex<settings_db::SettingsDb>>,
 ) -> anyhow::Result<()> {
     static ABOUT_TEXT: &str = "По всем замечаниям или предложениям обращаться сюда:\
