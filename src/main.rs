@@ -9,7 +9,6 @@ mod webhook;
 
 use teloxide::{prelude::*, utils::command::BotCommand};
 
-use teloxide::requests::RequestWithFile;
 use teloxide::types::InputFile;
 
 #[macro_use]
@@ -40,8 +39,9 @@ async fn run() {
     let bot = Bot::from_env();
     let bot_parameters = parameters.clone();
 
-    let bot_dispatcher =
-        Dispatcher::new(bot.clone()).messages_handler(move |rx: DispatcherHandlerRx<Message>| {
+    let mut bot_dispatcher = Dispatcher::new(bot.clone()).messages_handler(
+        move |rx: DispatcherHandlerRx<Bot, Message>| {
+            let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
             rx.for_each(move |message| {
                 let bot_name = bot_parameters.bot_name.clone();
                 let settings_db = settings_db.clone();
@@ -126,7 +126,8 @@ async fn run() {
                     }*/
                 }
             })
-        });
+        },
+    );
 
     if parameters.is_webhook_mode_enabled {
         log::info!("Webhook mode activated");

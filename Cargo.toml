@@ -3,27 +3,30 @@ name = "slowpoke-telegram"
 version = "0.1.0"
 authors = ["Alexander Zaitsev <zamazan4ik@tut.by>"]
 edition = "2018"
+resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-rt = "1.1.1"
-actix-web = "3.1.0"
-anyhow = "1.0.38"
-bincode = "1.3.1"
+anyhow = "1.0.44"
+axum = "0.2.5"
+bincode = "1.3.3"
 chrono = "0.4.19"
-log = "0.4.11"
-once_cell = "1.5.1"
-once-cell-regex = "0.2.0"
+log = "0.4.14"
+once_cell = "1.8.0"
+once-cell-regex = "0.2.1"
 pretty_env_logger = "0.4.0"
-regex = "1.4.1"
-serde = { version = "1.0.119", features = ["derive"] }
-serde_json = "1.0.59"
-sled = "0.34.6"
-sqlx = { version = "0.4.2", features = [ "macros", "runtime-tokio-native-tls", "sqlite" ] }
-teloxide = "0.3.4"
-tokio = { version = "0.2.22", features = ["rt-threaded", "macros"] }
-url = "2.2.0"
+regex = "1.5.4"
+serde = { version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.68"
+sled = "0.34.7"
+sqlx = { version = "0.5.7", features = [ "macros", "runtime-tokio-native-tls", "sqlite" ] }
+teloxide =  { version = "0.5.2", features = ["auto-send", "macros"] }
+tokio = { version = "1.12.0", features = ["rt-multi-thread", "macros"] }
+tokio-stream = "0.1.7"
+tower = "0.4.8"
+tower-http = { version = "0.1.1", features = ["trace"] }
+url = "2.2.2"
 
 [profile.release]
 lto = true

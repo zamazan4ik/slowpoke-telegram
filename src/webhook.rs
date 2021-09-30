@@ -1,15 +1,10 @@
+use teloxide::prelude::*;
 use tokio::sync::mpsc;
 
-use actix_web::middleware;
-use actix_web::web;
-use actix_web::{App, HttpResponse, HttpServer, Responder};
-use std::env;
-use teloxide::prelude::*;
-
 async fn telegram_request(
-    tx: web::Data<mpsc::UnboundedSender<Result<Update, String>>>,
     input: String,
-) -> impl Responder {
+    tx: axum::extract::Extension<mpsc::UnboundedSender<Result<teloxide::types::Update, String>>>,
+) -> impl axum::response::IntoResponse {
     let try_parse = match serde_json::from_str(&input) {
         Ok(update) => Ok(update),
         Err(error) => {
@@ -28,45 +23,61 @@ async fn telegram_request(
             .expect("Cannot send an incoming update from the webhook")
     }
 
-    HttpResponse::Ok()
+    axum::http::StatusCode::OK
 }
 
-pub async fn webhook(bot: Bot) -> mpsc::UnboundedReceiver<Result<Update, String>> {
-    let bind_address = Result::unwrap_or(env::var("BIND_ADDRESS"), "0.0.0.0".to_string());
-    let bind_port: u16 = env::var("BIND_PORT")
+pub async fn webhook(
+    bot: Bot,
+) -> impl teloxide::dispatching::update_listeners::UpdateListener<String> {
+    let bind_address = Result::unwrap_or(std::env::var("BIND_ADDRESS"), "0.0.0.0".to_string());
+    let bind_port: u16 = std::env::var("BIND_PORT")
         .unwrap_or("8080".to_string())
         .parse()
         .expect("BIND_PORT value has to be an integer");
 
-    let host = env::var("HOST").expect("HOST env variable missing");
-    let path = match env::var("WEBHOOK_URI") {
-        Ok(path) => path,
-        Err(_e) => env::var("TELOXIDE_TOKEN").expect("TELOXIDE_TOKEN env variable missing"),
-    };
-    let url = format!("https://{}/{}", host, path);
+    let teloxide_token =
+        std::env::var("TELOXIDE_TOKEN").expect("TELOXIDE_TOKEN env variable missing");
+    let host = std::env::var("HOST").expect("HOST env variable missing");
+    let path = format!("/{}/api/v1/message", teloxide_token);
+    let url = format!("https://{}{}", host, path);
 
-    bot.set_webhook(url)
+    bot.set_webhook(url.parse().unwrap())
         .send()
         .await
         .expect("Cannot setup a webhook");
 
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let sender_channel_data: web::Data<mpsc::UnboundedSender<Result<Update, String>>> =
-        web::Data::new(tx);
+    let app = axum::Router::new()
+        .route(path.as_str(), axum::handler::post(telegram_request))
+        .layer(
+            tower::ServiceBuilder::new()
+                .layer(tower_http::trace::TraceLayer::new_for_http())
+                .layer(axum::AddExtensionLayer::new(tx))
+                .into_inner(),
+        );
 
-    let local = tokio::task::LocalSet::new();
-    let sys = actix_rt::System::run_in_tokio("server", &local);
-    HttpServer::new(move || {
-        App::new()
-            .wrap(middleware::Logger::default())
-            .app_data(sender_channel_data.clone())
-            .route(path.as_str(), web::post().to(telegram_request))
-    })
-    .bind(format!("{}:{}", bind_address, bind_port))
-    .unwrap()
-    .run();
-    tokio::spawn(sys);
+    let server_address: std::net::SocketAddr = format!("{}:{}", bind_address, bind_port)
+        .parse()
+        .expect("Unable to parse socket address");
 
-    return rx;
+    tokio::spawn(async move {
+        axum::Server::bind(&server_address)
+            .serve(app.into_make_service())
+            .await
+            .expect("Axum server error")
+    });
+
+    let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
+
+    fn streamf<S, T>(state: &mut (S, T)) -> &mut S {
+        &mut state.0
+    }
+
+    let (stop_token, _) = teloxide::dispatching::stop_token::AsyncStopToken::new_pair();
+    teloxide::dispatching::update_listeners::StatefulListener::new(
+        (stream, stop_token),
+        streamf,
+        |state: &mut (_, teloxide::dispatching::stop_token::AsyncStopToken)| state.1.clone(),
+    )
 }

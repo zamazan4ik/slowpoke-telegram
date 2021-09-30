@@ -1,6 +1,6 @@
 pub struct Parameters {
     pub bot_name: String,
-    pub owner_id: i32,
+    pub owner_id: i64,
     pub settings_database_path: std::path::PathBuf,
     pub chat_database_root_path: std::path::PathBuf,
     pub max_database_connections_count: u32,
@@ -13,10 +13,10 @@ impl Parameters {
     pub fn new() -> Self {
         let bot_name = std::env::var("BOT_NAME").expect("BOT_NAME env var is not specified");
 
-        let owner_id: i32 = std::env::var("OWNER_ID")
+        let owner_id: i64 = std::env::var("OWNER_ID")
             .expect("OWNER_ID env var is not specified")
             .parse()
-            .expect("Cannot parse as i32");
+            .expect("Cannot parse as i64");
 
         let settings_database_path: std::path::PathBuf = std::env::var("SETTINGS_DATABASE_PATH")
             .expect("SETTINGS_DATABASE_PATH is not specified")
