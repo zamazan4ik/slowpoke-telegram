@@ -4,6 +4,6 @@ COPY . .
 RUN cargo install --path .
 
 FROM debian:buster-slim
-RUN apt-get update && apt-get install -y openssl ca-certificates && aplt-get clean
+RUN apt-get update && apt-get install -y openssl ca-certificates && apt-get clean
 COPY --from=builder /usr/local/cargo/bin/slowpoke-telegram /usr/local/bin/slowpoke-telegram
 CMD ["slowpoke-telegram"]
