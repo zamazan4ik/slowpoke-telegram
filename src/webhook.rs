@@ -1,4 +1,4 @@
-use teloxide::prelude::*;
+use teloxide::prelude2::*;
 use tokio::sync::mpsc;
 
 async fn telegram_request(
@@ -27,7 +27,7 @@ async fn telegram_request(
 }
 
 pub async fn webhook(
-    bot: Bot,
+    bot: AutoSend<Bot>,
 ) -> impl teloxide::dispatching::update_listeners::UpdateListener<String> {
     let bind_address = Result::unwrap_or(std::env::var("BIND_ADDRESS"), "0.0.0.0".to_string());
     let bind_port: u16 = std::env::var("BIND_PORT")
@@ -42,18 +42,17 @@ pub async fn webhook(
     let url = format!("https://{}{}", host, path);
 
     bot.set_webhook(url.parse().unwrap())
-        .send()
         .await
         .expect("Cannot setup a webhook");
 
     let (tx, rx) = mpsc::unbounded_channel();
 
     let app = axum::Router::new()
-        .route(path.as_str(), axum::handler::post(telegram_request))
+        .route(path.as_str(), axum::routing::post(telegram_request))
         .layer(
             tower::ServiceBuilder::new()
                 .layer(tower_http::trace::TraceLayer::new_for_http())
-                .layer(axum::AddExtensionLayer::new(tx))
+                .layer(tower_http::add_extension::AddExtensionLayer::new(tx))
                 .into_inner(),
         );
 
