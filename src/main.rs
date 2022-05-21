@@ -35,6 +35,16 @@ async fn run() {
 
     let bot = Bot::from_env().auto_send();
 
+    let message_clean_periodicity = parameters.message_clean_periodicity;
+    let clean_databases_factory = pool_factory.clone();
+    let _ = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(message_clean_periodicity);
+        loop {
+            interval.tick().await;
+            clean_databases(clean_databases_factory.clone()).await;
+        }
+    });
+
     let handler = Update::filter_message()
         .branch(
             dptree::entry()
@@ -86,6 +96,22 @@ async fn run() {
     } else {
         log::info!("Long polling mode activated");
         bot_dispatcher.setup_ctrlc_handler().dispatch().await;
+    }
+}
+
+async fn clean_databases(
+    pool_factory: std::sync::Arc<tokio::sync::Mutex<db::SqliteDatabasePoolFactory>>,
+) {
+    let chat_ids = pool_factory.lock().await.list_existing_chats();
+
+    for chat_id in chat_ids {
+        match pool_factory.lock().await.create(chat_id).await {
+            Ok(chat) => match chat.clean_old_messages().await {
+                Ok(_) => log::debug!("Chat with id={} cleaned successfully", chat_id),
+                Err(e) => log::warn!("Error during chat with id={} cleaning: {}", chat_id, e),
+            },
+            Err(e) => log::warn!("Cannot open a chat database: {}", e),
+        }
     }
 }
 
