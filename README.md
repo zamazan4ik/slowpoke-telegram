@@ -2,7 +2,7 @@
 Just reminds you (in some way) that you are like Slowpoke :)
 
 ### Dependencies
-* Rust 1.55 or higher
+* Rust 1.61 or higher
 * Cargo
 
 ### How to build
