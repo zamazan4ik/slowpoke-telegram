@@ -1,15 +1,12 @@
 mod commands;
 mod db;
-mod detection;
 mod logging;
 mod parameters;
 mod settings_db;
 mod utils;
 mod webhook;
 
-use teloxide::{prelude::*, utils::command::BotCommand};
-
-use teloxide::types::InputFile;
+use teloxide::prelude::*;
 
 #[macro_use]
 extern crate anyhow;
@@ -36,103 +33,61 @@ async fn run() {
             parameters.max_database_connections_count,
         )));
 
-    let bot = Bot::from_env();
-    let bot_parameters = parameters.clone();
+    let bot = Bot::from_env().auto_send();
 
-    let mut bot_dispatcher = Dispatcher::new(bot.clone()).messages_handler(
-        move |rx: DispatcherHandlerRx<Bot, Message>| {
-            let rx = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-            rx.for_each(move |message| {
-                let bot_name = bot_parameters.bot_name.clone();
-                let settings_db = settings_db.clone();
-                let owner_id = bot_parameters.owner_id;
-                let pool_factory = pool_factory.clone();
-                async move {
-                    if let Some(message_text) = message.update.text() {
-                        // Handle commands. If command cannot be parsed - continue processing
-                        match commands::Command::parse(message_text, bot_name) {
-                            Ok(command) => {
-                                commands::command_answer(&message, command, owner_id, settings_db)
-                                    .await
-                                    .log_on_error()
-                                    .await;
-                                return;
-                            }
-                            Err(_) => (),
-                        };
-                    }
+    let message_clean_periodicity = parameters.message_clean_periodicity;
+    let clean_databases_factory = pool_factory.clone();
+    let _ = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(message_clean_periodicity);
+        loop {
+            interval.tick().await;
+            clean_databases(clean_databases_factory.clone()).await;
+        }
+    });
 
-                    log::info!("Handler is triggered");
+    let handler = Update::filter_message()
+        .branch(
+            dptree::entry()
+                .filter_command::<commands::Command>()
+                .endpoint(commands::command_handler),
+        )
+        .branch(
+            dptree::filter(|msg: Message| msg.forward_from_message_id().is_some()).endpoint(
+                |msg: Message,
+                 bot: AutoSend<Bot>,
+                 pool_factory: std::sync::Arc<
+                    tokio::sync::Mutex<db::SqliteDatabasePoolFactory>,
+                >,
+                 settings_db: std::sync::Arc<tokio::sync::Mutex<settings_db::SettingsDb>>| async move {
+                    process_forward_message(pool_factory.clone(), settings_db.clone(), msg, bot)
+                        .await?;
+                    anyhow::Result::Ok(())
+                },
+            ),
+        );
 
-                    // Check for forwarded messages
-                    if let Some(forwarded_message_id) = message.update.forward_from_message_id() {
-                        let mut pool_factory = pool_factory.lock().await;
-                        match pool_factory.create(message.update.chat_id()).await {
-                            Ok(client) => {
-                                match client.check_forward_message(forwarded_message_id).await {
-                                    Ok(val) => {
-                                        if val {
-                                            match settings_db
-                                                .lock()
-                                                .await
-                                                .get_setting("image_file_id")
-                                            {
-                                                Ok(value) => {
-                                                    log::info!("{}", value);
+    if !parameters.is_webhook_mode_enabled {
+        log::info!("Webhook deleted");
+        bot.delete_webhook().await.expect("Cannot delete a webhook");
+    }
 
-                                                    if let Err(e) = message
-                                                        .answer_photo(InputFile::FileId(value))
-                                                        .send()
-                                                        .await
-                                                    {
-                                                        log::info!(
-                                                            "Cannot send a response: {:?}",
-                                                            e
-                                                        );
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    log::info!("Cannot get a setting: {:?}", e)
-                                                }
-                                            }
-                                        } else {
-                                            if let Err(e) = client
-                                                .add_forwarded_message(forwarded_message_id)
-                                                .await
-                                            {
-                                                log::warn!(
-                                                    "Cannot add a message to the database: {:?}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => log::warn!("Database error: {:?}", e),
-                                }
-                            }
-                            Err(e) => log::warn!("Cannot create a db client: {}", e),
-                        }
-
-                        // 1) Check in a database. If exists - send a slowpoke and update timestamp
-                        // 2) If doesn't exist - push to a database [primary_id; current_timestamp; forwarded_message_id]
-                    }
-
-                    // For now we check whole message for being an URL.
-                    // We are not trying to find sub-URLs in a message, since it can lead to too high
-                    // false positives rate
-                    /*if detection::is_url(message_text) {
-                        // TODO: Check in a corresponding database and send slowpoke message, if such
-                        // link was earlier :)
-                    }*/
-                }
-            })
-        },
-    );
+    let mut bot_dispatcher = Dispatcher::builder(bot.clone(), handler)
+        .dependencies(dptree::deps![
+            pool_factory,
+            settings_db,
+            parameters.owner_id
+        ])
+        .default_handler(|_| async move {})
+        .error_handler(LoggingErrorHandler::with_custom_text(
+            "An error has occurred in the dispatcher",
+        ))
+        .build();
 
     if parameters.is_webhook_mode_enabled {
         log::info!("Webhook mode activated");
         let rx = webhook::webhook(bot);
         bot_dispatcher
+            .setup_ctrlc_handler()
             .dispatch_with_listener(
                 rx.await,
                 LoggingErrorHandler::with_custom_text("An error from the update listener"),
@@ -140,12 +95,56 @@ async fn run() {
             .await;
     } else {
         log::info!("Long polling mode activated");
-        bot.delete_webhook()
-            .send()
-            .await
-            .expect("Cannot delete a webhook");
-        bot_dispatcher.dispatch().await;
+        bot_dispatcher.setup_ctrlc_handler().dispatch().await;
     }
+}
+
+async fn clean_databases(
+    pool_factory: std::sync::Arc<tokio::sync::Mutex<db::SqliteDatabasePoolFactory>>,
+) {
+    let chat_ids = pool_factory.lock().await.list_existing_chats();
+
+    for chat_id in chat_ids {
+        match pool_factory.lock().await.create(chat_id).await {
+            Ok(chat) => match chat.clean_old_messages().await {
+                Ok(_) => log::debug!("Chat with id={} cleaned successfully", chat_id),
+                Err(e) => log::warn!("Error during chat with id={} cleaning: {}", chat_id, e),
+            },
+            Err(e) => log::warn!("Cannot open a chat database: {}", e),
+        }
+    }
+}
+
+async fn process_forward_message(
+    pool_factory: std::sync::Arc<tokio::sync::Mutex<db::SqliteDatabasePoolFactory>>,
+    settings_db: std::sync::Arc<tokio::sync::Mutex<settings_db::SettingsDb>>,
+    msg: Message,
+    bot: AutoSend<Bot>,
+) -> anyhow::Result<()> {
+    log::debug!("Start processing the message with a forward received");
+
+    let mut pool_factory = pool_factory.lock().await;
+    match pool_factory.create(msg.chat.id.0).await {
+        Ok(client) => {
+            let forwarded_message_id = msg
+                .forward_from_message_id()
+                .ok_or_else(|| anyhow!("Cannot find a forwarded message"))?;
+            match client.check_forward_message(&forwarded_message_id).await {
+                Ok(val) => {
+                    if val {
+                        utils::send_slowpoke(msg, bot, settings_db).await?;
+                    } else if let Err(e) = client.add_forwarded_message(&forwarded_message_id).await
+                    {
+                        log::warn!("Cannot add a message to the database: {:?}", e);
+                    }
+                }
+                Err(e) => log::warn!("Database error: {:?}", e),
+            }
+        }
+        Err(e) => log::warn!("Cannot create a db client: {}", e),
+    }
+
+    anyhow::Result::Ok(())
 }
 
 // Message types for check

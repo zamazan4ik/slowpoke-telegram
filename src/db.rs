@@ -36,6 +36,12 @@ impl ChatDatabase {
             .execute(&self.database_pool)
             .await
     }
+
+    pub async fn clean_old_messages(&self) -> Result<SqliteQueryResult, Error> {
+        sqlx::query("DELETE FROM forwarded_message WHERE timestamp < date('now', '-3 day');")
+            .execute(&self.database_pool)
+            .await
+    }
 }
 
 impl SqliteDatabasePoolFactory {
@@ -46,6 +52,43 @@ impl SqliteDatabasePoolFactory {
             database_pools: Default::default(),
             client_pool: Default::default(),
         }
+    }
+
+    pub fn list_existing_chats(&self) -> std::vec::Vec<i64> {
+        let chat_paths = std::fs::read_dir(self.db_root_path.as_path()).unwrap();
+
+        let mut chats = Vec::new();
+
+        for chat_path in chat_paths {
+            match chat_path {
+                Ok(chat_path) => {
+                    // We want to skip all db files, except .db extensions. We need to do it since SQLite spawns temporal files
+                    if let Some(extension) = chat_path.path().extension() {
+                        if extension != "db" {
+                            continue;
+                        }
+                    } else {
+                        // Files with no extension also should be skipped
+                        continue;
+                    }
+                    if let Some(chat_name) = chat_path.path().file_stem() {
+                        if let Some(chat_name) = chat_name.to_str() {
+                            match chat_name.parse::<i64>() {
+                                Ok(chat_id) => chats.push(chat_id),
+                                Err(e) => log::warn!("Cannot parse chat_name into i64: {}", e),
+                            };
+                        } else {
+                            log::warn!("Cannot convert chat_name to String")
+                        }
+                    } else {
+                        log::warn!("Cannot extract file stem")
+                    }
+                }
+                Err(e) => log::warn!("Cannot read dir entry: {}", e),
+            }
+        }
+
+        chats
     }
 
     pub async fn init_new_db(&self, db: sqlx::SqlitePool) -> Result<SqliteQueryResult, Error> {
@@ -64,12 +107,10 @@ impl SqliteDatabasePoolFactory {
         } else {
             let new_db_path = self.db_root_path.join(format!("{}.db", chat_id));
 
-            let connection_string = format!(
-                "{}",
-                new_db_path
-                    .to_str()
-                    .ok_or(anyhow!("Cannot convert a database path to a string"))?
-            );
+            let connection_string = (new_db_path
+                .to_str()
+                .ok_or_else(|| anyhow!("Cannot convert a database path to a string"))?)
+            .to_string();
 
             log::info!("{}", connection_string);
 

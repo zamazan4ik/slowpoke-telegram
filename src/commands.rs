@@ -1,8 +1,8 @@
 use crate::settings_db;
 use crate::utils;
-use teloxide::{prelude::*, utils::command::BotCommand};
+use teloxide::{prelude::*, utils::command::BotCommands};
 
-#[derive(BotCommand)]
+#[derive(Clone, teloxide::utils::command::BotCommands)]
 #[command(rename = "lowercase", description = "These commands are supported:")]
 pub enum Command {
     #[command(description = "display info about bot.")]
@@ -11,12 +11,15 @@ pub enum Command {
     Help,
     #[command(description = "set reply image")]
     SetImage,
+    #[command(description = "throw a slowpoke")]
+    Slowpoke,
 }
 
-pub async fn command_answer(
-    cx: &UpdateWithCx<Bot, Message>,
+pub async fn command_handler(
+    msg: Message,
+    bot: AutoSend<Bot>,
     command: Command,
-    owner_id: i64,
+    owner_id: u64,
     settings_db: std::sync::Arc<tokio::sync::Mutex<settings_db::SettingsDb>>,
 ) -> anyhow::Result<()> {
     static ABOUT_TEXT: &str = "По всем замечаниям или предложениям обращаться сюда:\
@@ -29,24 +32,27 @@ pub async fn command_answer(
 
     match command {
         Command::About => {
-            cx.reply_to(ABOUT_TEXT).send().await?;
+            bot.send_message(msg.chat.id, ABOUT_TEXT)
+                .reply_to_message_id(msg.id)
+                .await?;
         }
         Command::Help => {
-            if utils::is_sender_an_owner(&cx.update.from(), owner_id) {
-                cx.reply_to(format!("{} {}", HELP_TEXT, HELP_TEXT_FOR_ADMIN))
-                    .send()
-                    .await?;
+            let help_text = if utils::is_sender_an_owner(&msg.from(), owner_id) {
+                format!("{} {}", HELP_TEXT, HELP_TEXT_FOR_ADMIN)
             } else {
-                cx.reply_to(HELP_TEXT).send().await?;
-            }
+                HELP_TEXT.to_string()
+            };
+            bot.send_message(msg.chat.id, help_text)
+                .reply_to_message_id(msg.id)
+                .await?;
         }
         Command::SetImage => {
-            if utils::is_sender_an_owner(&cx.update.from(), owner_id) {
-                if let Some(reply_message) = cx.update.reply_to_message() {
+            if utils::is_sender_an_owner(&msg.from(), owner_id) {
+                if let Some(reply_message) = msg.reply_to_message() {
                     if let Some(photo) = reply_message.photo() {
-                        let first_photo = photo
-                            .first()
-                            .ok_or(anyhow!("Cannot extract a first photo from the reply"))?;
+                        let first_photo = photo.first().ok_or_else(|| {
+                            anyhow!("Cannot extract a first photo from the reply")
+                        })?;
 
                         let image_set_result = settings_db
                             .lock()
@@ -60,14 +66,27 @@ pub async fn command_answer(
                     } else {
                         static MISSED_PHOTO_IN_MESSAGE: &str =
                             "Не могу обнаружить фото в цитируемом сообщении.";
-                        cx.reply_to(MISSED_PHOTO_IN_MESSAGE).send().await?;
+                        bot.send_message(msg.chat.id, MISSED_PHOTO_IN_MESSAGE)
+                            .reply_to_message_id(msg.id)
+                            .await?;
                     }
                 } else {
                     static MISSED_REPLY_MESSAGE: &str = "Чтобы установить изображение, Вам необходимо ответить на сообщение с требуемым изображнием";
-                    cx.reply_to(MISSED_REPLY_MESSAGE).send().await?;
+                    bot.send_message(msg.chat.id, MISSED_REPLY_MESSAGE)
+                        .reply_to_message_id(msg.id)
+                        .await?;
                 }
             } else {
-                cx.reply_to(PERMISSION_DENIED).send().await?;
+                bot.send_message(msg.chat.id, PERMISSION_DENIED)
+                    .reply_to_message_id(msg.id)
+                    .await?;
+            }
+        }
+        Command::Slowpoke => {
+            if let Some(reply_message) = msg.reply_to_message() {
+                utils::send_slowpoke(reply_message.clone(), bot, settings_db).await?;
+            } else {
+                utils::send_slowpoke(msg, bot, settings_db).await?;
             }
         }
     };
