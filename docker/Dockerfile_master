@@ -6,7 +6,7 @@ RUN git clone --single-branch --branch main ${SLOWPOKE_SOURCE_URL}
 WORKDIR slowpoke-telegram
 RUN cargo install --path .
 
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 RUN apt-get update && apt-get install -y openssl ca-certificates && apt-get clean
 COPY --from=builder /usr/local/cargo/bin/slowpoke-telegram /usr/local/bin/slowpoke-telegram
 CMD ["slowpoke-telegram"]
