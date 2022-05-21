@@ -1,9 +1,8 @@
 use crate::settings_db;
 use crate::utils;
-use teloxide::{prelude2::*, utils::command::BotCommand};
-//use teloxide_core::types::BotCommand;
+use teloxide::{prelude::*, utils::command::BotCommands};
 
-#[derive(Clone, teloxide::utils::command::BotCommand)]
+#[derive(Clone, teloxide::utils::command::BotCommands)]
 #[command(rename = "lowercase", description = "These commands are supported:")]
 pub enum Command {
     #[command(description = "display info about bot.")]
@@ -18,7 +17,7 @@ pub async fn command_handler(
     msg: Message,
     bot: AutoSend<Bot>,
     command: Command,
-    owner_id: i64,
+    owner_id: u64,
     settings_db: std::sync::Arc<tokio::sync::Mutex<settings_db::SettingsDb>>,
 ) -> anyhow::Result<()> {
     static ABOUT_TEXT: &str = "По всем замечаниям или предложениям обращаться сюда:\

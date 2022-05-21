@@ -20,7 +20,7 @@ serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 sled = "0.34.7"
 sqlx = { version = "0.5.13", features = [ "macros", "runtime-tokio-native-tls", "sqlite" ] }
-teloxide =  { version = "0.7.3", features = ["auto-send", "macros"] }
+teloxide =  { version = "0.9.0", features = ["auto-send", "macros"] }
 tokio = { version = "1.18.2", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1.8"
 tower = "0.4.12"

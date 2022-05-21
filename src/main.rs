@@ -6,7 +6,7 @@ mod settings_db;
 mod utils;
 mod webhook;
 
-use teloxide::prelude2::*;
+use teloxide::prelude::*;
 
 use teloxide::types::InputFile;
 
@@ -100,7 +100,7 @@ async fn process_forward_message(
     log::debug!("Start processing the message with a forward received");
 
     let mut pool_factory = pool_factory.lock().await;
-    match pool_factory.create(msg.chat.id).await {
+    match pool_factory.create(msg.chat.id.0).await {
         Ok(client) => {
             let forwarded_message_id = msg
                 .forward_from_message_id()

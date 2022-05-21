@@ -1,4 +1,4 @@
-use teloxide::prelude2::*;
+use teloxide::prelude::*;
 use tokio::sync::mpsc;
 
 async fn telegram_request(
