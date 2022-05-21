@@ -64,12 +64,10 @@ impl SqliteDatabasePoolFactory {
         } else {
             let new_db_path = self.db_root_path.join(format!("{}.db", chat_id));
 
-            let connection_string = format!(
-                "{}",
-                new_db_path
-                    .to_str()
-                    .ok_or(anyhow!("Cannot convert a database path to a string"))?
-            );
+            let connection_string = (new_db_path
+                .to_str()
+                .ok_or_else(|| anyhow!("Cannot convert a database path to a string"))?)
+            .to_string();
 
             log::info!("{}", connection_string);
 

@@ -8,8 +8,6 @@ mod webhook;
 
 use teloxide::prelude::*;
 
-use teloxide::types::InputFile;
-
 #[macro_use]
 extern crate anyhow;
 
@@ -108,22 +106,7 @@ async fn process_forward_message(
             match client.check_forward_message(&forwarded_message_id).await {
                 Ok(val) => {
                     if val {
-                        match settings_db.lock().await.get_setting("image_file_id") {
-                            Ok(value) => {
-                                log::debug!("Image file id: {}", value);
-
-                                if let Err(e) = bot
-                                    .send_photo(msg.chat.id, InputFile::file_id(value))
-                                    .reply_to_message_id(msg.id)
-                                    .await
-                                {
-                                    log::warn!("Cannot send a response: {:?}", e);
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!("Cannot get a setting: {:?}", e)
-                            }
-                        }
+                        utils::send_slowpoke(msg, bot, settings_db).await?;
                     } else if let Err(e) = client.add_forwarded_message(&forwarded_message_id).await
                     {
                         log::warn!("Cannot add a message to the database: {:?}", e);

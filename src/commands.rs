@@ -11,6 +11,8 @@ pub enum Command {
     Help,
     #[command(description = "set reply image")]
     SetImage,
+    #[command(description = "throw a slowpoke")]
+    Slowpoke,
 }
 
 pub async fn command_handler(
@@ -78,6 +80,13 @@ pub async fn command_handler(
                 bot.send_message(msg.chat.id, PERMISSION_DENIED)
                     .reply_to_message_id(msg.id)
                     .await?;
+            }
+        }
+        Command::Slowpoke => {
+            if let Some(reply_message) = msg.reply_to_message() {
+                utils::send_slowpoke(reply_message.clone(), bot, settings_db).await?;
+            } else {
+                utils::send_slowpoke(msg, bot, settings_db).await?;
             }
         }
     };
