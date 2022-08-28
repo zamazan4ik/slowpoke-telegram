@@ -6,5 +6,5 @@ RUN cargo install --path .
 FROM debian:bullseye-slim
 RUN apt-get update && apt-get install -y openssl ca-certificates python3 && apt-get clean
 COPY --from=builder /usr/local/cargo/bin/slowpoke-telegram /usr/local/bin/slowpoke-telegram
-RUN python3 ./merge_script.py
+RUN python3 ./migration_scripts/migration_script.py
 CMD ["slowpoke-telegram"]
