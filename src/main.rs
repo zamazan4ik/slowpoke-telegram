@@ -130,7 +130,7 @@ async fn process_forward_message(
                 .forward_from_message_id()
                 .ok_or_else(|| anyhow!("Cannot find a forwarded message"))?;
             let sender_id = msg.from()
-                .ok_or_else(|| anyhow!("Cannot find a message sender"))?.id.0;
+                .ok_or_else(|| anyhow!("Cannot find a message sender"))?.id.0 as i64;
             
             match client.check_forward_message(&forwarded_message_id, &sender_id).await {
                 Ok(val) => {
