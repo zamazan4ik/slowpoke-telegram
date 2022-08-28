@@ -17,10 +17,9 @@ def main():
             conn = sqlite3.connect(filename)
             cur = conn.cursor()
             version = cur.execute("""PRAGMA user_version""").fetchone()[0]
-            if version < 1:
-                cur.execute("ALTER TABLE forwarded_message ADD COLUMN sender_id INTEGER;")
-                cur.execute("UPDATE forwarded_message SET sender_id = 0;")
-                cur.execute("""PRAGMA user_version = 1""")
+            if version == 1:
+                cur.execute("ALTER TABLE forwarded_message DROP COLUMN sender_id INTEGER;")
+                cur.execute("""PRAGMA user_version = 0""")
                 conn.commit()
             
             conn.close()
