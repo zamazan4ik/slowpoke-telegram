@@ -95,7 +95,14 @@ impl SqliteDatabasePoolFactory {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS forwarded_message (
                 message_id INTEGER PRIMARY KEY NOT NULL,
+                sender_id INTEGER,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+        )
+        .execute(&db)
+        .await
+
+        sqlx::query(
+            "PRAGMA user_version = 1",
         )
         .execute(&db)
         .await
