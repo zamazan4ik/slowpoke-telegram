@@ -23,7 +23,7 @@ impl ChatDatabase {
         sender_id: &i64
     ) -> Result<bool, Error> {
         let result = sqlx::query(
-            "SELECT message_id FROM forwarded_message WHERE message_id = ? AND sender_id = ? AND timestamp >= date('now', '-1 day')",
+            "SELECT message_id FROM forwarded_message WHERE message_id = ? AND sender_id != ? AND timestamp >= date('now', '-1 day')",
         )
         .bind(forward_message_id)
         .bind(sender_id)
