@@ -106,7 +106,7 @@ impl SqliteDatabasePoolFactory {
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
         )
         .execute(&db)
-        .await
+        .await;
 
         sqlx::query(
             "PRAGMA user_version = 1",
