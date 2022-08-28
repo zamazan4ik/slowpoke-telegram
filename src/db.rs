@@ -17,11 +17,16 @@ impl ChatDatabase {
         Self { database_pool }
     }
 
-    pub async fn check_forward_message(&self, forward_message_id: &i32) -> Result<bool, Error> {
+    pub async fn check_forward_message(
+        &self,
+        forward_message_id: &i32,
+        sender_id: &u64
+    ) -> Result<bool, Error> {
         let result = sqlx::query(
-            "SELECT message_id FROM forwarded_message WHERE message_id = ? AND timestamp >= date('now', '-1 day')",
+            "SELECT message_id FROM forwarded_message WHERE message_id = ? AND sender_id != ? AND timestamp >= date('now', '-1 day')",
         )
         .bind(forward_message_id)
+        .bind(sender_id)
         .fetch_optional(&self.database_pool).await?;
 
         Ok(result.is_some())
@@ -30,9 +35,11 @@ impl ChatDatabase {
     pub async fn add_forwarded_message(
         &self,
         forward_message_id: &i32,
+        sender_id: &u64
     ) -> Result<SqliteQueryResult, Error> {
-        sqlx::query("INSERT INTO forwarded_message (message_id) VALUES(?)")
+        sqlx::query("INSERT INTO forwarded_message (message_id, sender_id) VALUES(?, ?)")
             .bind(forward_message_id)
+            .bind(sender_id)
             .execute(&self.database_pool)
             .await
     }
@@ -95,6 +102,7 @@ impl SqliteDatabasePoolFactory {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS forwarded_message (
                 message_id INTEGER PRIMARY KEY NOT NULL,
+                sender_id INTEGER NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
         )
         .execute(&db)

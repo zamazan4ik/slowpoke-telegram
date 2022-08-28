@@ -129,11 +129,14 @@ async fn process_forward_message(
             let forwarded_message_id = msg
                 .forward_from_message_id()
                 .ok_or_else(|| anyhow!("Cannot find a forwarded message"))?;
-            match client.check_forward_message(&forwarded_message_id).await {
+            let sender_id = msg.from()
+                .ok_or_else(|| anyhow!("Cannot find a message sender"))?.id.0;
+            
+            match client.check_forward_message(&forwarded_message_id, &sender_id).await {
                 Ok(val) => {
                     if val {
                         utils::send_slowpoke(msg, bot, settings_db).await?;
-                    } else if let Err(e) = client.add_forwarded_message(&forwarded_message_id).await
+                    } else if let Err(e) = client.add_forwarded_message(&forwarded_message_id, &sender_id).await
                     {
                         log::warn!("Cannot add a message to the database: {:?}", e);
                     }
